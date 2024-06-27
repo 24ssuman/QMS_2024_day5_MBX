@@ -1,0 +1,211 @@
+LAMMPS (7 Feb 2024 - Development - patch_7Feb2024_update1-366-g069919ddcd)
+  using 4 OpenMP thread(s) per MPI task
+# mbx water water box
+
+variable        temp equal 298.0  # simulation temperature
+variable        dt  equal  0.5  # in fs
+variable        pressure equal 1  #pressure of the system
+variable        thermo_freq equal 1
+variable        dump_freq equal  1
+variable        nsteps equal  200000
+variable        print_freq equal   100
+variable        seed equal 123456
+
+# for the calculation of the box dimention
+variable     num_water equal 256
+variable     req_density equal 1.00 # g/cc
+
+# for cubic box
+variable     box_dim equal (180*${num_water}/6.022)^(0.33) #amstrong
+variable     box_dim equal (180*256/6.022)^(0.33) 
+
+processors * * * map xyz
+
+units real
+atom_style full
+boundary        p p p
+
+region box block 0 ${box_dim} 0 ${box_dim} 0 ${box_dim}
+region box block 0 19.1269035264092 0 ${box_dim} 0 ${box_dim}
+region box block 0 19.1269035264092 0 19.1269035264092 0 ${box_dim}
+region box block 0 19.1269035264092 0 19.1269035264092 0 19.1269035264092
+create_box 3 box bond/types 1 angle/types 1             extra/bond/per/atom 2 extra/angle/per/atom 1 extra/special/per/atom 2
+Created orthogonal box = (0 0 0) to (19.126904 19.126904 19.126904)
+  1 by 2 by 2 MPI processor grid
+
+mass 1 15.9994
+mass 2 1.008
+mass 3 22.99
+
+pair_style  mbx 9.0
+pair_coeff * * 0.0 0.0
+pair_modify     tail yes
+
+neighbor        2.0 bin
+neigh_modify    every 1 delay 10 check yes
+
+molecule water water.mol
+Read molecule template water:
+# Water molecule. TIP3P geometry
+  1 molecules
+  0 fragments
+  3 atoms with max type 2
+  2 bonds with max type 1
+  1 angles with max type 1
+  0 dihedrals with max type 0
+  0 impropers with max type 0
+molecule na na.mol
+Read molecule template na:
+# Na+ ion
+  1 molecules
+  0 fragments
+  1 atoms with max type 1
+  0 bonds with max type 0
+  0 angles with max type 0
+  0 dihedrals with max type 0
+  0 impropers with max type 0
+#olecule cl cl.mol
+
+create_atoms 0 random 1 ${seed} NULL mol na ${seed} overlap 1.33
+create_atoms 0 random 1 123456 NULL mol na ${seed} overlap 1.33
+create_atoms 0 random 1 123456 NULL mol na 123456 overlap 1.33
+Created 1 atoms
+  using lattice units in orthogonal box = (0 0 0) to (19.126904 19.126904 19.126904)
+  create_atoms CPU = 0.000 seconds
+#reate_atoms 0 random 1 ${seed} NULL mol cl ${seed} overlap 1.33
+create_atoms 0 random ${num_water} ${seed} NULL mol water ${seed} overlap 1.33
+create_atoms 0 random 256 ${seed} NULL mol water ${seed} overlap 1.33
+create_atoms 0 random 256 123456 NULL mol water ${seed} overlap 1.33
+create_atoms 0 random 256 123456 NULL mol water 123456 overlap 1.33
+Created 768 atoms
+  using lattice units in orthogonal box = (0 0 0) to (19.126904 19.126904 19.126904)
+  create_atoms CPU = 0.042 seconds
+
+compute         mbx all pair mbx
+variable        e1bpip    equal c_mbx[1]
+variable        e2bpip    equal c_mbx[2]
+variable        e3bpip    equal c_mbx[3]
+variable        e4bpip    equal c_mbx[4]
+variable        edisp     equal c_mbx[5]
+variable        ebuck     equal c_mbx[6]
+variable        eele      equal c_mbx[7]
+variable        etot      equal c_mbx[8]
+
+#fix             MBX all mbx 1 h2o 1 2 3 1 2 2 json mbx.json
+#fix             MBX all mbx 3 li+ 1 1 1 1 cl- 2 2 1 2 h2o 3 4 3 3 4 4 json mbx.json
+fix             MBX all mbx 2 li+ 3 3 1 3 h2o 1 2 3 1 2 2 json mbx.json
+
+timestep        ${dt}
+timestep        0.5
+
+thermo_style    custom step time temp etotal pe press vol density lx
+thermo          ${thermo_freq}
+thermo          1
+thermo_modify   flush yes
+
+velocity        all create ${temp} ${seed} rot yes dist gaussian
+velocity        all create 298 ${seed} rot yes dist gaussian
+velocity        all create 298 123456 rot yes dist gaussian
+
+fix             thermo_print all print ${print_freq} "$(step) $(0.001*time) $(temp) $(etotal) $(ke) $(pe) $(enthalpy) $(density) $(lx) $(ly) $(lz) $(vol) $(pxx) $(pyy) $(pzz) $(press)" file thermo.out screen no title "# step time temp etotal ke pe enthalpy density lx ly lz vol pxx pyy pzz press"
+fix             thermo_print all print 100 "$(step) $(0.001*time) $(temp) $(etotal) $(ke) $(pe) $(enthalpy) $(density) $(lx) $(ly) $(lz) $(vol) $(pxx) $(pyy) $(pzz) $(press)" file thermo.out screen no title "# step time temp etotal ke pe enthalpy density lx ly lz vol pxx pyy pzz press"
+
+# NPT for density equilibriation
+fix             mynpt all npt temp ${temp} ${temp} $(100.0*dt) iso ${pressure} ${pressure} $(1000.0*dt) tchain 4
+fix             mynpt all npt temp 298 ${temp} $(100.0*dt) iso ${pressure} ${pressure} $(1000.0*dt) tchain 4
+fix             mynpt all npt temp 298 298 $(100.0*dt) iso ${pressure} ${pressure} $(1000.0*dt) tchain 4
+fix             mynpt all npt temp 298 298 50 iso ${pressure} ${pressure} $(1000.0*dt) tchain 4
+fix             mynpt all npt temp 298 298 50 iso 1 ${pressure} $(1000.0*dt) tchain 4
+fix             mynpt all npt temp 298 298 50 iso 1 1 $(1000.0*dt) tchain 4
+fix             mynpt all npt temp 298 298 50 iso 1 1 500 tchain 4
+
+dump            2 all custom ${dump_freq} traj_npt.lammpstrj id type x y z
+dump            2 all custom 1 traj_npt.lammpstrj id type x y z
+dump_modify     2 sort id
+
+restart         10 restart.inter.1 restart.inter.2
+
+run            ${nsteps}
+run            200000
+
+CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE
+
+Your simulation uses code contributions which should be cited:
+
+- fix mbx command:
+
+@article{10.1063/5.0156036,
+ author = {Riera, Marc and Knight, Christopher and Bull-Vulpe, Ethan F. and Zhu, Xuanyu and Agnew, Henry and Smith, Daniel G. A. and Simmonett, Andrew C. and Paesani, Francesco},
+ title = "{MBX: A many-body energy and force calculator for data-driven many-body simulations}",
+ journal = {The Journal of Chemical Physics},
+ volume = {159},
+ number = {5},
+ pages = {054802},
+ year = {2023},
+ doi = {10.1063/5.0156036},
+}
+
+CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE-CITE
+
+Generated 0 of 3 mixed pair_coeff terms from geometric mixing rule
+WARNING: Bonds are defined but no bond style is set (../force.cpp:197)
+WARNING: Likewise 1-2 special neighbor interactions != 1.0 (../force.cpp:199)
+WARNING: Angles are defined but no angle style is set (../force.cpp:202)
+WARNING: Likewise 1-3 special neighbor interactions != 1.0 (../force.cpp:204)
+Neighbor list info ...
+  update: every = 1 steps, delay = 10 steps, check = yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 11
+  ghost atom cutoff = 11
+  binsize = 5.5, bins = 4 4 4
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair mbx, perpetual
+      attributes: half, newton on
+      pair build: half/bin/newton
+      stencil: half/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 10.1 | 10.1 | 10.1 Mbytes
+   Step          Time           Temp          TotEng         PotEng         Press          Volume        Density           Lx      
+         0   0              298            1938.1423      1255.9422      62973.048      6997.3565      1.0982544      19.126904    
+         1   0.5            293.54982      1938.5391      1266.5266      63250.128      6997.5045      1.0982312      19.127038    
+         2   1              281.64944      1939.5055      1294.7361      64031.933      6997.9496      1.0981613      19.127444    
+         3   1.5            271.38991      1940.369       1319.0863      64929.353      6998.6957      1.0980442      19.128124    
+         4   2              272.85193      1940.2268      1315.5972      65495.112      6999.7471      1.0978793      19.129081    
+         5   2.5            291.40531      1938.5507      1271.4476      65428.65       7001.1066      1.0976661      19.13032     
+         6   3              324.46316      1935.6324      1192.8511      64696.871      7002.7741      1.0974047      19.131839    
+         7   3.5            363.17367      1932.305       1100.9052      63499.674      7004.7466      1.0970957      19.133635    
+         8   4              397.58254      1929.3176      1019.1469      62118.469      7007.0185      1.09674        19.135703    
+         9   4.5            421.62131      1926.9989      961.79724      60750.668      7009.5838      1.0963386      19.138038    
+        10   5              435.54683      1925.2627      928.18183      59415.034      7012.4363      1.0958927      19.140634    
+        11   5.5            445.44699      1923.6813      903.93643      57961.399      7015.57        1.0954032      19.143484    
+        12   6              460.2468       1921.5914      867.96588      56175.74       7018.9783      1.0948712      19.146584    
+        13   6.5            487.19772      1918.3895      803.06626      53933.153      7022.653       1.0942983      19.149925    
+        14   7              527.93963      1913.9212      705.32899      51318.697      7026.5839      1.0936862      19.153497    
+        15   7.5            577.5527       1908.5813      586.41181      48641.585      7030.7586      1.0930367      19.157289    
+        16   8              627.2388       1902.995       467.08095      46327.404      7035.1645      1.0923522      19.16129     
+        17   8.5            668.79502      1897.6219      366.57475      44742.691      7039.7907      1.0916344      19.165489    
+        18   9              698.34876      1892.5913      293.88794      44041.824      7044.6295      1.0908845      19.16988     
+        19   9.5            717.9159       1887.6853      244.18757      44102.146      7049.6775      1.0901034      19.174457    
+        20   10             734.37289      1882.3328      201.16072      44570.659      7054.9347      1.0892911      19.179223    
+        21   10.5           755.97553      1875.7486      145.1225       45010.013      7060.403       1.0884474      19.184177    
+        22   11             787.7092       1867.3628      64.089941      45078.835      7066.084       1.0875723      19.189321    
+        23   11.5           828.24016      1857.2271     -38.831735      44655.995      7071.9777      1.086666       19.194654    
+        24   12             870.73711      1845.9209     -147.42459      43838.983      7078.0811      1.0857289      19.200175    
+        25   12.5           906.87174      1834.0828     -241.98434      42834.4        7084.3898      1.0847621      19.205877    
+        26   13             931.07868      1822.087      -309.39618      41817.094      7090.8979      1.0837665      19.211757    
+        27   13.5           942.78627      1810.0124     -348.27254      40838.126      7097.5994      1.0827432      19.217807    
+        28   14             946.17571      1797.7265     -368.31769      39815.196      7104.4884      1.0816933      19.224023    
+        29   14.5           948.10606      1784.9646     -385.49866      38598.222      7111.5584      1.0806179      19.230397    
+        30   15             955.10616      1771.4331     -415.05528      37073.909      7118.8022      1.0795183      19.236925    
+        31   15.5           970.51218      1756.9921     -464.76464      35259.458      7126.2104      1.0783961      19.243595    
+        32   16             993.03372      1741.8183     -531.49615      33339.356      7133.7725      1.077253       19.2504      
+        33   16.5           1017.5995      1726.3695     -603.18239      31616.313      7141.477       1.0760908      19.257327    
+        34   17             1038.0705      1711.1625     -665.2529       30395.423      7149.3132      1.0749113      19.264368    
+        35   17.5           1050.3296      1696.5439     -707.93584      29859.396      7157.2729      1.0737159      19.271515    
+        36   18             1054.2354      1682.5608     -730.86038      29990.271      7165.351       1.0725054      19.278763    
+        37   18.5           1053.6299      1668.9341     -743.10095      30572.607      7173.5454      1.0712802      19.286109    
+        38   19             1054.3803      1655.1525     -758.60047      31279.361      7181.8564      1.0700405      19.293554    
+        39   19.5           1061.2609      1640.7174     -788.78689      31802.14       7190.2845      1.0687863      19.301098    
+        40   20             1075.2547      1625.4313     -836.10853      31962.452      7198.8294      1.0675177      19.308741    
+        41   20.5           1092.906       1609.5144     -892.43395      31753.455      7207.4886      1.0662351      19.31648     
+        42   21             1108.1898      1593.4398     -943.49716      31291.108      7216.2578      1.0649394      19.324311    

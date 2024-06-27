@@ -1,0 +1,73 @@
+# mbx water water box
+
+variable        temp equal 298.0  # simulation temperature
+variable        dt  equal  0.5  # in fs
+variable        pressure equal 1  #pressure of the system
+variable        thermo_freq equal 100
+variable        dump_freq equal  100
+variable        nsteps equal  200000
+variable        print_freq equal   100
+variable        seed equal 123456
+
+# for the calculation of the box dimention
+variable     num_water equal 256 
+variable     req_density equal 1.00 # g/cc
+
+# for cubic box
+variable     box_dim equal (180*${num_water}/6.022)^(0.33) #amstrong
+
+processors * * * map xyz
+
+units real
+atom_style full
+boundary        p p p
+
+region box block 0 ${box_dim} 0 ${box_dim} 0 ${box_dim}
+create_box 2 box bond/types 1 angle/types 1 &
+            extra/bond/per/atom 2 extra/angle/per/atom 1 extra/special/per/atom 2
+
+mass 1 15.9994
+mass 2 1.008
+
+pair_style  mbx 9.0
+pair_coeff * * 0.0 0.0
+pair_modify     tail yes
+
+neighbor        2.0 bin
+neigh_modify    every 1 delay 10 check yes
+
+molecule water water.mol
+create_atoms 0 random ${num_water} 34564 NULL mol water 25367 overlap 1.33
+
+compute         mbx all pair mbx
+variable        e1bpip    equal c_mbx[1]
+variable        e2bpip    equal c_mbx[2]
+variable        e3bpip    equal c_mbx[3]
+variable        e4bpip    equal c_mbx[4]
+variable        edisp     equal c_mbx[5]
+variable        ebuck     equal c_mbx[6]
+variable        eele      equal c_mbx[7]
+variable        etot      equal c_mbx[8]
+fix             MBX all mbx 1 h2o 1 2 3 1 2 2 json mbx.json 
+
+timestep        ${dt}
+
+thermo_style    custom step time temp etotal pe press vol density lx
+thermo          ${thermo_freq}
+thermo_modify   flush yes
+
+velocity        all create ${temp} ${seed} rot yes dist gaussian
+
+fix             thermo_print all print ${print_freq} "$(step) $(0.001*time) $(temp) $(etotal) $(ke) $(pe) $(enthalpy) $(density) $(lx) $(ly) $(lz) $(vol) $(pxx) $(pyy) $(pzz) $(press)" file thermo.out screen no title "# step time temp etotal ke pe enthalpy density lx ly lz vol pxx pyy pzz press"
+
+# NPT for density equilibriation
+fix             mynpt all npt temp ${temp} ${temp} $(100.0*dt) iso ${pressure} ${pressure} $(1000.0*dt) tchain 4
+
+dump            2 all custom ${dump_freq} traj_npt.lammpstrj id type x y z
+dump_modify     2 sort id
+
+restart         10 restart.inter.1 restart.inter.2
+
+run            ${nsteps} 
+
+write_data water_final.data nocoeff
