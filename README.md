@@ -2,4 +2,4 @@
 
 PI: Francesco Paesani 
 
-Team UCSD: Suman Saha, Vibhu Vardhan Singh
+Team UCSD: Suman Saha (s7saha@ucsd.edu), Vibhu Vardhan Singh
